@@ -1,0 +1,1 @@
+{"[\"/usr/bin/gcc\", \"c\", []]": {"compiler_includes": ["/usr/lib/gcc/x86_64-pc-linux-gnu/13.1.1/include", "/usr/local/include", "/usr/lib/gcc/x86_64-pc-linux-gnu/13.1.1/include-fixed", "/usr/include"], "compiler_standard": "-std=gnu17", "target": "x86_64-pc-linux-gnu"}}

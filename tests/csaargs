@@ -1,0 +1,1 @@
+-Xclang -analyzer-checker -Xclang alpha.unix.GenericErrorCode -Xclang -load -Xclang /home/mschroetter/project/falk-ba/checker/build/GenericErrorCodeChecker.so -Xclang -analyzer-config -Xclang "alpha.unix.GenericErrorCode:FunctionsToCheck=open|2|-1|-1;read|3|1|-1;malloc|1|-1|NULL;getwd|1|0|NULL"

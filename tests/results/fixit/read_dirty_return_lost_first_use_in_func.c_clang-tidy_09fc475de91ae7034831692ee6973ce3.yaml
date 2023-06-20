@@ -1,0 +1,20 @@
+---
+MainSourceFile:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c'
+Diagnostics:
+  - DiagnosticName:  clang-diagnostic-unused-parameter
+    DiagnosticMessage:
+      Message:         'unused parameter ''argc'''
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c'
+      FileOffset:      110
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+  - DiagnosticName:  clang-diagnostic-unused-parameter
+    DiagnosticMessage:
+      Message:         'unused parameter ''argv'''
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c'
+      FileOffset:      122
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+...

@@ -1,0 +1,20 @@
+---
+MainSourceFile:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_clean_custom_allocator.c'
+Diagnostics:
+  - DiagnosticName:  clang-diagnostic-unused-parameter
+    DiagnosticMessage:
+      Message:         'unused parameter ''argc'''
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_clean_custom_allocator.c'
+      FileOffset:      227
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+  - DiagnosticName:  clang-diagnostic-unused-parameter
+    DiagnosticMessage:
+      Message:         'unused parameter ''argv'''
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_clean_custom_allocator.c'
+      FileOffset:      239
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+...

@@ -1,0 +1,34 @@
+---
+MainSourceFile:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c'
+Diagnostics:
+  - DiagnosticName:  clang-diagnostic-deprecated-declarations
+    DiagnosticMessage:
+      Message:         '''getwd'' is deprecated'
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c'
+      FileOffset:      96
+      Replacements:    []
+    Notes:
+      - Message:         '''getwd'' has been explicitly marked deprecated here'
+        FilePath:        '/usr/include/unistd.h'
+        FileOffset:      20248
+        Replacements:    []
+      - Message:         'expanded from macro ''__attribute_deprecated__'''
+        FilePath:        '/usr/include/sys/cdefs.h'
+        FileOffset:      12675
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+  - DiagnosticName:  clang-diagnostic-implicit-function-declaration
+    DiagnosticMessage:
+      Message:         'call to undeclared library function ''printf'' with type ''int (const char *, ...)''; ISO C99 and later do not support implicit function declarations'
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c'
+      FileOffset:      154
+      Replacements:    []
+    Notes:
+      - Message:         'include the header <stdio.h> or explicitly provide a declaration for ''printf'''
+        FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c'
+        FileOffset:      154
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+...

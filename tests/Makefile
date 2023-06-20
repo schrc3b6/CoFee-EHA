@@ -1,0 +1,38 @@
+CC :=gcc
+CPP :=g++
+LDFLAGS :=
+C_SOURCES :=$(wildcard *.c)
+C_EXECUTABLE :=$(C_SOURCES:.c=)
+ 
+all:
+	gcc -o malloc_clean_custom_allocator malloc_clean_custom_allocator.c
+	gcc -o malloc_dirty_custom_allocator malloc_dirty_custom_allocator.c
+	gcc -o open_clean_array_first_use_in_func open_clean_array_first_use_in_func.c
+	gcc -o open_clean_first_use_in_func open_clean_first_use_in_func.c
+	gcc -o open_clean_malloc_array_first_use_in_func open_clean_malloc_array_first_use_in_func.c
+	gcc -o open_clean_malloc_first_use_in_func open_clean_malloc_first_use_in_func.c
+	gcc -o open_dirty_array_first_use_in_func open_dirty_array_first_use_in_func.c
+	gcc -o open_dirty_first_use_in_func open_dirty_first_use_in_func.c
+	gcc -o open_dirty_malloc_array_first_use_in_func open_dirty_malloc_array_first_use_in_func.c
+	gcc -o open_dirty_malloc_first_use_in_func open_dirty_malloc_first_use_in_func.c
+	gcc -o read_clean_return_lost_first_use_in_func read_clean_return_lost_first_use_in_func.c
+	gcc -o read_clean_while_loop_first_use_in_func read_clean_while_loop_first_use_in_func.c
+	gcc -o read_dirty_return_lost_first_use_in_func read_dirty_return_lost_first_use_in_func.c
+	gcc -o read_dirty_while_loop_first_use_in_func read_dirty_while_loop_first_use_in_func.c
+	gcc -o getwd_clean_buffer_ref_passed_as_arg getwd_clean_buffer_ref_passed_as_arg.c
+	gcc -o getwd_clean_complex_func_first_use_in_func getwd_clean_complex_func_first_use_in_func.c
+	gcc -o getwd_clean_first_use_as_read getwd_clean_first_use_as_read.c
+	gcc -o getwd_clean_first_use_as_write getwd_clean_first_use_as_write.c
+	gcc -o getwd_clean_first_use_in_func getwd_clean_first_use_in_func.c
+	gcc -o getwd_clean_malloc_first_use_as_read getwd_clean_malloc_first_use_as_read.c
+	gcc -o getwd_clean_malloc_first_use_as_write getwd_clean_malloc_first_use_as_write.c
+	gcc -o getwd_clean_malloc_first_use_in_func getwd_clean_malloc_first_use_in_func.c
+	gcc -o getwd_dirty_buffer_ref_passed_as_arg getwd_dirty_buffer_ref_passed_as_arg.c
+	gcc -o getwd_dirty_complex_func_first_use_in_func getwd_dirty_complex_func_first_use_in_func.c
+	gcc -o getwd_dirty_first_use_as_read getwd_dirty_first_use_as_read.c
+	gcc -o getwd_dirty_first_use_as_write getwd_dirty_first_use_as_write.c
+	gcc -o getwd_dirty_first_use_in_func getwd_dirty_first_use_in_func.c
+	gcc -o getwd_dirty_malloc_first_use_as_read getwd_dirty_malloc_first_use_as_read.c
+	gcc -o getwd_dirty_malloc_first_use_as_write getwd_dirty_malloc_first_use_as_write.c
+	gcc -o getwd_dirty_malloc_first_use_in_func getwd_dirty_malloc_first_use_in_func.c
+

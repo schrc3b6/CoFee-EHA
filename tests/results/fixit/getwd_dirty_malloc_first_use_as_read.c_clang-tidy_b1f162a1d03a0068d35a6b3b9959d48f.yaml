@@ -1,0 +1,37 @@
+---
+MainSourceFile:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c'
+Diagnostics:
+  - DiagnosticName:  clang-diagnostic-unused-variable
+    DiagnosticMessage:
+      Message:         'unused variable ''buf_2'''
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c'
+      FileOffset:      172
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+  - DiagnosticName:  clang-diagnostic-deprecated-declarations
+    DiagnosticMessage:
+      Message:         '''getwd'' is deprecated'
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c'
+      FileOffset:      180
+      Replacements:    []
+    Notes:
+      - Message:         '''getwd'' has been explicitly marked deprecated here'
+        FilePath:        '/usr/include/unistd.h'
+        FileOffset:      20248
+        Replacements:    []
+      - Message:         'expanded from macro ''__attribute_deprecated__'''
+        FilePath:        '/usr/include/sys/cdefs.h'
+        FileOffset:      12675
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+  - DiagnosticName:  clang-diagnostic-unused-variable
+    DiagnosticMessage:
+      Message:         'unused variable ''test'''
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c'
+      FileOffset:      242
+      Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+...

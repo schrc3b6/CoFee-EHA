@@ -1,0 +1,21 @@
+---
+MainSourceFile:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_write.c'
+Diagnostics:
+  - DiagnosticName:  clang-diagnostic-deprecated-declarations
+    DiagnosticMessage:
+      Message:         '''getwd'' is deprecated'
+      FilePath:        '/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_write.c'
+      FileOffset:      180
+      Replacements:    []
+    Notes:
+      - Message:         '''getwd'' has been explicitly marked deprecated here'
+        FilePath:        '/usr/include/unistd.h'
+        FileOffset:      20248
+        Replacements:    []
+      - Message:         'expanded from macro ''__attribute_deprecated__'''
+        FilePath:        '/usr/include/sys/cdefs.h'
+        FileOffset:      12675
+        Replacements:    []
+    Level:           Warning
+    BuildDirectory:  '/home/mschroetter/project/falk-ba/tests/evaluation_tests'
+...

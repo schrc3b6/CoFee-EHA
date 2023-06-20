@@ -1,0 +1,1923 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Plist HTML Viewer</title>
+
+    <meta charset="UTF-8">
+
+    <style type="text/css">
+      .severity-low {
+  background-color: #669603;
+}
+
+.severity-low:after {
+  content : 'L';
+}
+
+.severity-unspecified {
+  background-color: #666666;
+}
+
+.severity-unspecified:after {
+  content : 'U';
+}
+
+.severity-style {
+  background-color: #9932cc;
+}
+
+.severity-style:after {
+  content : 'S';
+}
+
+.severity-medium {
+  background-color: #a9d323;
+  color: black;
+}
+
+.severity-medium:after {
+  content : 'M';
+}
+
+.severity-high {
+  background-color: #ffa800;
+}
+
+.severity-high:after {
+  content : 'H';
+}
+
+.severity-critical {
+  background-color: #e92625;
+}
+
+.severity-critical:after {
+  content : 'C';
+}
+
+i[class*="severity-"] {
+  line-height: normal;
+  text-transform: capitalize;
+  font-size: 0.8em;
+  font-weight: bold;
+  color: white;
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  text-align: center;
+  font-family: sans-serif;
+}
+
+      html, body {
+  width: 100%;
+  height: 100%;
+  padding: 0px;
+  margin: 0px;
+}
+
+div.container {
+  padding: 10px;
+}
+
+#content {
+  height: 100%;
+  display: block;
+  overflow: hidden;
+}
+
+#content > div {
+  margin: 10px;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  height: 97%;
+}
+
+#side-bar {
+  overflow: auto;
+}
+
+#editor-wrapper {
+  overflow: hidden;
+}
+
+.button {
+  background-color: #f1f1f1;
+  text-decoration: none;
+  display: inline-block;
+  padding: 8px 16px;
+  color: black;
+  cursor: pointer;
+}
+
+.button:hover {
+  background-color: #ddd;
+  color: black;
+}
+
+.review-status {
+  color: white;
+  text-align: center;
+}
+
+.review-status-confirmed {
+  background-color: #e92625;
+}
+
+.review-status-false-positive {
+  background-color: grey;
+}
+
+.review-status-intentional {
+  background-color: #669603;
+}
+
+      table th {
+  font-size: 1.2em;
+  color: #fff;
+  line-height: 1.4;
+  background-color: #007ea7;
+}
+
+table th.active,
+table th.sortable:hover {
+  cursor: pointer;
+  background-color: #2da6ce;
+}
+
+table tr:nth-child(even) {
+  background-color: #f5f5f5;
+}
+
+table tr > td {
+  padding: 5px;
+}
+
+      #report-list {
+  width: 100%;
+}
+
+#report-list .bug-path-length {
+  width: 5%;
+  text-align: center;
+}
+
+#report-list .severity {
+  text-align: center;
+}
+
+    </style>
+
+    <script>
+      function setNonCompatibleBrowserMessage() {
+  document.body.innerHTML =
+    '<h2 style="margin-left: 20px;">Your browser is not compatible with CodeChecker Viewer!</h2> \
+     <p style="margin-left: 20px;">The version required for the following browsers are:</p> \
+     <ul style="margin-left: 20px;"> \
+     <li>Internet Explorer: version 9 or newer</li> \
+     <li>Firefox: version 22.0 or newer</li> \
+     </ul>';
+}
+
+// http://stackoverflow.com/questions/5916900/how-can-you-detect-the-version-of-a-browser
+var browserVersion = (function(){
+  var ua = navigator.userAgent, tem,
+    M = ua.match(/(opera|chrome|safari|firefox|msie|trident(?=\/))\/?\s*(\d+)/i) || [];
+
+  if (/trident/i.test(M[1])) {
+    tem = /\brv[ :]+(\d+)/g.exec(ua) || [];
+    return 'IE ' + (tem[1] || '');
+  }
+
+  if (M[1] === 'Chrome') {
+    tem = ua.match(/\b(OPR|Edge)\/(\d+)/);
+    if (tem != null) return tem.slice(1).join(' ').replace('OPR', 'Opera');
+  }
+
+  M = M[2] ? [M[1], M[2]] : [navigator.appName, navigator.appVersion, '-?'];
+  if ((tem = ua.match(/version\/(\d+)/i)) != null) M.splice(1, 1, tem[1]);
+    return M.join(' ');
+})();
+
+var pos = browserVersion.indexOf(' ');
+var browser = browserVersion.substr(0, pos);
+var version = parseInt(browserVersion.substr(pos + 1));
+
+var browserCompatible
+  = browser === 'Firefox'
+  ? version >= 22
+  : browser === 'IE'
+  ? version >= 9
+  : true;
+
+      // -------------------------------------------------------------------------
+//  Part of the CodeChecker project, under the Apache License v2.0 with
+//  LLVM Exceptions. See LICENSE for license information.
+//  SPDX-License-Identifier: Apache-2.0 WITH LLVM-exception
+// -------------------------------------------------------------------------
+
+var BugList = {
+
+  init : function () {
+    this.initTableSort();
+    this.initBugPathLength();
+    this.initByUrl();
+  },
+
+  initTableSort : function () {
+    var that = this;
+
+    var table = document.getElementById('report-list');
+    table.querySelectorAll('th').forEach(function (column) {
+      if (that.canSort(column.id)) {
+        column.addEventListener('click', function () {
+          that.sort(column.id);
+        });
+        column.classList.add('sortable');
+      }
+    });
+  },
+
+  initBugPathLength : function () {
+    var that = this;
+
+    document.querySelectorAll('.bug-path-length').forEach(
+    function (widget) {
+      widget.style.backgroundColor =
+        that.generateRedGreenGradientColor(widget.innerHTML, 20, 0.5);
+    });
+  },
+
+  initByUrl : function () {
+    var state = {};
+    window.location.hash.substr(1).split('&').forEach(function (s) {
+      var parts = s.split('=');
+      state[parts[0]] = parts[1];
+    });
+
+    var column = state['sort'] ? state['sort'] : 'file-path';
+    var asc = state['asc'] ? !!parseInt(state['asc']) : true;
+    this.sort(column, asc);
+  },
+
+  generateRedGreenGradientColor : function (value, max, opacity) {
+    var red   = (255 * value) / max;
+    var green = (255 * (max - value)) / max;
+    var blue  = 0;
+    return 'rgba(' + parseInt(red) + ',' + parseInt(green) + ',' + blue
+      + ',' + opacity + ')';
+  },
+
+  canSort : function (columnId) {
+    return columnId === 'report-id' ||
+           columnId === 'file-path' ||
+           columnId === 'severity' ||
+           columnId === 'checker-name' ||
+           columnId === 'message' ||
+           columnId === 'bug-path-length' ||
+           columnId === 'review-status';
+  },
+
+  compare : function (columnId, a, b, asc) {
+    switch (columnId) {
+      case 'report-id':
+      case 'bug-path-length':
+        return asc
+          ? parseInt(a.innerHTML) > parseInt(b.innerHTML)
+          : parseInt(a.innerHTML) < parseInt(b.innerHTML);
+
+      case 'file-path':
+        var fileA = a.getAttribute('file');
+        var fileB = b.getAttribute('file');
+        var lineA = parseInt(a.getAttribute('line'));
+        var lineB = parseInt(b.getAttribute('line'));
+
+        if (asc) {
+          if (fileA > fileB) {
+            return true;
+          } else if (fileA === fileB) {
+            return lineA > lineB ? true : false;
+          } else {
+            return false;
+          }
+        } else {
+          if (fileA < fileB) {
+            return true;
+          } else if (fileA === fileB) {
+            return lineA < lineB ? true : false;
+          } else {
+            return false;
+          }
+        }
+
+      case 'severity':
+        return asc
+          ? a.getAttribute('severity') > b.getAttribute('severity')
+          : a.getAttribute('severity') < b.getAttribute('severity');
+
+      default:
+        return asc
+          ? a.innerHTML.toLowerCase() > b.innerHTML.toLowerCase()
+          : a.innerHTML.toLowerCase() < b.innerHTML.toLowerCase();
+    }
+  },
+
+  sort : function (columnId, asc) {
+    var rows = null,
+        switching = true,
+        i, j, x, y, minIdx;
+
+    var table = document.getElementById('report-list');
+    var column = document.getElementById(columnId);
+    var cellIndex = column.cellIndex;
+
+    if (asc === undefined) {
+      asc = column.getAttribute('sort') === 'desc' ? false : true;
+    }
+
+    var n = table.rows.length;
+    for (i = 1; i < n - 1; i++)
+    {
+      minIdx = i;
+      for (j = i + 1; j < n; j++) {
+        x = table.rows[minIdx].getElementsByTagName('td')[cellIndex];
+        y = table.rows[j].getElementsByTagName('td')[cellIndex];
+        if (this.compare(columnId, x, y, asc)) {
+          minIdx = j;
+        }
+      }
+
+      if (minIdx !== i) {
+        table.rows[i].parentNode.insertBefore(
+          table.rows[minIdx], table.rows[i]);
+      }
+    }
+
+    table.querySelectorAll('th').forEach(function (column) {
+      column.removeAttribute('sort');
+      column.classList.remove('active');
+    });
+
+    column.classList.add('active');
+    column.setAttribute('sort', asc ? 'desc' : 'asc');
+    window.location.hash = '#sort=' + columnId + '&asc=' + (asc ? 1 : 0);
+  }
+};
+
+
+      window.onload = function () {
+        if (!browserCompatible) {
+          setNonCompatibleBrowserMessage();
+        } else {
+          BugList.init()
+        }
+      }
+    </script>
+  </head>
+  <body>
+  <div class="container">
+    <a href="statistics.html" class="button">Go To Statistics</a>
+    <table id="report-list">
+      
+                <tr>
+                  <th id="report-id">&nbsp;</th>
+                  <th id="file-path">File</th>
+                  <th id="severity">Severity</th>
+                  <th id="checker-name">Checker name</th>
+                  <th id="message">Message</th>
+                  <th id="bug-path-length">Bug path length</th>
+                  <th id="review-status">Review status</th>
+                </tr>
+                  <tr>
+                    <td>1</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_buffer_ref_passed_as_arg.c" line="14">
+                      <a href="getwd_clean_buffer_ref_passed_as_arg.c_clang-tidy_7b1c52380cb642ee7db797b7dda11d80.plist.html#reportHash=3aa400e27e040dbeb23633ca10d6806b">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_buffer_ref_passed_as_arg.c @ Line&nbsp;14
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>2</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_buffer_ref_passed_as_arg.c" line="26">
+                      <a href="getwd_clean_buffer_ref_passed_as_arg.c_clangsa_7b1c52380cb642ee7db797b7dda11d80.plist.html#reportHash=709fb115347832044a2cad772193d857">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_buffer_ref_passed_as_arg.c @ Line&nbsp;26
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#unix-malloc-c" target="_blank">unix.Malloc</a></td>
+                    <td>Potential leak of memory pointed to by 'buf'</td>
+                    <td class="bug-path-length">7</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>3</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_complex_func_first_use_in_func.c" line="17">
+                      <a href="getwd_clean_complex_func_first_use_in_func.c_clangsa_e4b0dc2e5aadfa4c39531c90a4194e2a.plist.html#reportHash=e1aadeba1c059eb07a1dbd25541c35d5">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_complex_func_first_use_in_func.c @ Line&nbsp;17
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'ret' is not checked for errors properly</td>
+                    <td class="bug-path-length">7</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>4</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_complex_func_first_use_in_func.c" line="15">
+                      <a href="getwd_clean_complex_func_first_use_in_func.c_clang-tidy_e4b0dc2e5aadfa4c39531c90a4194e2a.plist.html#reportHash=4f3e4410dff51d917da1f4481a441af6">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_complex_func_first_use_in_func.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>5</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_read.c" line="10">
+                      <a href="getwd_clean_first_use_as_read.c_clangsa_0ea95dbc1d59b1e72b2c30a642f1f3c0.plist.html#reportHash=65bddc72db5e7b694d2231ada711c700">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_read.c @ Line&nbsp;10
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'test' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>6</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_read.c" line="7">
+                      <a href="getwd_clean_first_use_as_read.c_clang-tidy_0ea95dbc1d59b1e72b2c30a642f1f3c0.plist.html#reportHash=b5b4f3f8468d15fbf96e248a96e6d666">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_read.c @ Line&nbsp;7
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>7</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_read.c" line="10">
+                      <a href="getwd_clean_first_use_as_read.c_clang-tidy_0ea95dbc1d59b1e72b2c30a642f1f3c0.plist.html#reportHash=1a11bbc2aa2910c4881dceaf89c27213">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_read.c @ Line&nbsp;10
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'test'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>8</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_write.c" line="7">
+                      <a href="getwd_clean_first_use_as_write.c_clang-tidy_f840d850dc259ffeeff383476bfec190.plist.html#reportHash=df371ca7c9fe5f8283a011124727123c">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_as_write.c @ Line&nbsp;7
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>9</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c" line="7">
+                      <a href="getwd_clean_first_use_in_func.c_clang-tidy_8bb24ddd334c61f1ad89549f64f1077c.plist.html#reportHash=6ede0e10b72d176f47b443f1acf832c4">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c @ Line&nbsp;7
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>10</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c" line="10">
+                      <a href="getwd_clean_first_use_in_func.c_clang-tidy_8bb24ddd334c61f1ad89549f64f1077c.plist.html#reportHash=a43f699b2ea624306ddacb36ecd1d340">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_first_use_in_func.c @ Line&nbsp;10
+                      </a>
+                    </td>
+                    <td class="severity" severity="high">
+                      <i class="severity-high"
+                         title="high"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wimplicit-function-declaration" target="_blank">clang-diagnostic-implicit-function-declaration</a></td>
+                    <td>call to undeclared library function 'printf' with type 'int (const char *, ...)'; ISO C99 and later do not support implicit function declarations</td>
+                    <td class="bug-path-length">2</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>11</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c" line="11">
+                      <a href="getwd_clean_malloc_first_use_as_read.c_clangsa_938f537572353cb02831170d85b00bae.plist.html#reportHash=3398e7caa0eb0da1cc67d2c506a54a21">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'buf_2' is not checked for errors properly</td>
+                    <td class="bug-path-length">5</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>12</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c" line="15">
+                      <a href="getwd_clean_malloc_first_use_as_read.c_clangsa_938f537572353cb02831170d85b00bae.plist.html#reportHash=65bddc72db5e7b694d2231ada711c700">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'test' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>13</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c" line="9">
+                      <a href="getwd_clean_malloc_first_use_as_read.c_clang-tidy_938f537572353cb02831170d85b00bae.plist.html#reportHash=9658da06d2c27b4df82e93d34a1328e4">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>14</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c" line="15">
+                      <a href="getwd_clean_malloc_first_use_as_read.c_clang-tidy_938f537572353cb02831170d85b00bae.plist.html#reportHash=8464d0f42444af02e65fb1c41dcdf849">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_read.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'test'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>15</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_write.c" line="11">
+                      <a href="getwd_clean_malloc_first_use_as_write.c_clangsa_28494dd67e86111c89231946f8b101b6.plist.html#reportHash=3398e7caa0eb0da1cc67d2c506a54a21">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_write.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'buf_2' is not checked for errors properly</td>
+                    <td class="bug-path-length">5</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>16</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_write.c" line="9">
+                      <a href="getwd_clean_malloc_first_use_as_write.c_clang-tidy_28494dd67e86111c89231946f8b101b6.plist.html#reportHash=566971f100173808d665dce2b3823069">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_as_write.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>17</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_in_func.c" line="11">
+                      <a href="getwd_clean_malloc_first_use_in_func.c_clangsa_8a45ae8919bfd9d8cfa012a6467fa478.plist.html#reportHash=3398e7caa0eb0da1cc67d2c506a54a21">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_in_func.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'buf_2' is not checked for errors properly</td>
+                    <td class="bug-path-length">5</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>18</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_in_func.c" line="9">
+                      <a href="getwd_clean_malloc_first_use_in_func.c_clang-tidy_8a45ae8919bfd9d8cfa012a6467fa478.plist.html#reportHash=623d162a9cade3729eb0ae53c856bd2f">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_clean_malloc_first_use_in_func.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>19</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c" line="23">
+                      <a href="getwd_dirty_buffer_ref_passed_as_arg.c_clangsa_59eca451081295ee277c69645dbf6ddc.plist.html#reportHash=7ecc26958b21c9509e28dc278268496e">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c @ Line&nbsp;23
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'ret' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>20</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c" line="26">
+                      <a href="getwd_dirty_buffer_ref_passed_as_arg.c_clangsa_59eca451081295ee277c69645dbf6ddc.plist.html#reportHash=4bfb10ee3f2515fd92dfe00261534be7">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c @ Line&nbsp;26
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Variable 'buf' is used before checking it properly for errors</td>
+                    <td class="bug-path-length">7</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>21</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c" line="26">
+                      <a href="getwd_dirty_buffer_ref_passed_as_arg.c_clangsa_59eca451081295ee277c69645dbf6ddc.plist.html#reportHash=c38736a60f627029f057f85c6691aa80">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c @ Line&nbsp;26
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable before checking the associated return value in 'retVal' for errors</td>
+                    <td class="bug-path-length">7</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>22</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c" line="14">
+                      <a href="getwd_dirty_buffer_ref_passed_as_arg.c_clang-tidy_59eca451081295ee277c69645dbf6ddc.plist.html#reportHash=2f4f4a45a595145e5f0f1417cd524e5c">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c @ Line&nbsp;14
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>23</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c" line="23">
+                      <a href="getwd_dirty_buffer_ref_passed_as_arg.c_clang-tidy_59eca451081295ee277c69645dbf6ddc.plist.html#reportHash=5853a386fb152f69e2b532a8b51d5f3c">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_buffer_ref_passed_as_arg.c @ Line&nbsp;23
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'ret'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>24</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c" line="15">
+                      <a href="getwd_dirty_complex_func_first_use_in_func.c_clangsa_14c0021dc2c49e14651470f6d29cde89.plist.html#reportHash=93c3a2884e190d04404d816c1af84347">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'ret' is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>25</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c" line="19">
+                      <a href="getwd_dirty_complex_func_first_use_in_func.c_clangsa_14c0021dc2c49e14651470f6d29cde89.plist.html#reportHash=f263137a225a10e0aebf7220cd76e425">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c @ Line&nbsp;19
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'ret' is not checked for errors properly</td>
+                    <td class="bug-path-length">6</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>26</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c" line="13">
+                      <a href="getwd_dirty_complex_func_first_use_in_func.c_clang-tidy_14c0021dc2c49e14651470f6d29cde89.plist.html#reportHash=175a15c5aad2ac0c8a3ec852b111c7f8">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c @ Line&nbsp;13
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-but-set-variable" target="_blank">clang-diagnostic-unused-but-set-variable</a></td>
+                    <td>variable 'ret' set but not used</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>27</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c" line="15">
+                      <a href="getwd_dirty_complex_func_first_use_in_func.c_clang-tidy_14c0021dc2c49e14651470f6d29cde89.plist.html#reportHash=cf7a20554d350883121aa4c94328d6d1">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_complex_func_first_use_in_func.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>28</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c" line="8">
+                      <a href="getwd_dirty_first_use_as_read.c_clangsa_4a78cca3de7927209bfb4e04dfc85339.plist.html#reportHash=dfd490788d4141b0b53b5f7c1abd3991">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'buf_2' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>29</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c" line="11">
+                      <a href="getwd_dirty_first_use_as_read.c_clangsa_4a78cca3de7927209bfb4e04dfc85339.plist.html#reportHash=65bddc72db5e7b694d2231ada711c700">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'test' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>30</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c" line="11">
+                      <a href="getwd_dirty_first_use_as_read.c_clangsa_4a78cca3de7927209bfb4e04dfc85339.plist.html#reportHash=20828ebfa6ddaac64eddf5a4caeff611">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable before checking the associated return value in 'buf_2' for errors</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>31</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c" line="8">
+                      <a href="getwd_dirty_first_use_as_read.c_clang-tidy_4a78cca3de7927209bfb4e04dfc85339.plist.html#reportHash=ac3c4dc7fec4b7db2a8f7a0de5728df6">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'buf_2'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>32</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c" line="8">
+                      <a href="getwd_dirty_first_use_as_read.c_clang-tidy_4a78cca3de7927209bfb4e04dfc85339.plist.html#reportHash=acf8e64a9b7021d4f37c4d645dc9f031">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>33</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c" line="11">
+                      <a href="getwd_dirty_first_use_as_read.c_clang-tidy_4a78cca3de7927209bfb4e04dfc85339.plist.html#reportHash=0acaf5d82c0f77517ef7f810889d4e41">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_read.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'test'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>34</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c" line="8">
+                      <a href="getwd_dirty_first_use_as_write.c_clangsa_f9a342a741597905bc845ccbff01fa18.plist.html#reportHash=dfd490788d4141b0b53b5f7c1abd3991">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'buf_2' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>35</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c" line="11">
+                      <a href="getwd_dirty_first_use_as_write.c_clangsa_f9a342a741597905bc845ccbff01fa18.plist.html#reportHash=d4911da85957320f1097f62a3307cbfa">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'buf_2' is not checked for errors properly</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>36</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c" line="8">
+                      <a href="getwd_dirty_first_use_as_write.c_clang-tidy_f9a342a741597905bc845ccbff01fa18.plist.html#reportHash=64dccc3418aebf63cb08ef60ae7dde18">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'buf_2'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>37</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c" line="8">
+                      <a href="getwd_dirty_first_use_as_write.c_clang-tidy_f9a342a741597905bc845ccbff01fa18.plist.html#reportHash=e160eefb42ee47791bea21b6757bf855">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_as_write.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>38</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c" line="8">
+                      <a href="getwd_dirty_first_use_in_func.c_clangsa_3ee88dd737a6ace74c135f483d7379f1.plist.html#reportHash=dfd490788d4141b0b53b5f7c1abd3991">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'buf_2' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>39</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c" line="11">
+                      <a href="getwd_dirty_first_use_in_func.c_clangsa_3ee88dd737a6ace74c135f483d7379f1.plist.html#reportHash=047efd1da15f0b64431e24d1579efcdd">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c @ Line&nbsp;11
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'buf_2' is not checked for errors properly</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>40</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c" line="8">
+                      <a href="getwd_dirty_first_use_in_func.c_clang-tidy_3ee88dd737a6ace74c135f483d7379f1.plist.html#reportHash=2422e5c979eaecb90bcb0b6dcff4bf98">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'buf_2'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>41</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c" line="8">
+                      <a href="getwd_dirty_first_use_in_func.c_clang-tidy_3ee88dd737a6ace74c135f483d7379f1.plist.html#reportHash=53ae964604ef4aa85e62b75b1a5f2b03">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>42</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_as_read.c_clangsa_b1f162a1d03a0068d35a6b3b9959d48f.plist.html#reportHash=dfd490788d4141b0b53b5f7c1abd3991">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'buf_2' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>43</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c" line="12">
+                      <a href="getwd_dirty_malloc_first_use_as_read.c_clangsa_b1f162a1d03a0068d35a6b3b9959d48f.plist.html#reportHash=65bddc72db5e7b694d2231ada711c700">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c @ Line&nbsp;12
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'test' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>44</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c" line="12">
+                      <a href="getwd_dirty_malloc_first_use_as_read.c_clangsa_b1f162a1d03a0068d35a6b3b9959d48f.plist.html#reportHash=20828ebfa6ddaac64eddf5a4caeff611">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c @ Line&nbsp;12
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable before checking the associated return value in 'buf_2' for errors</td>
+                    <td class="bug-path-length">4</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>45</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_as_read.c_clang-tidy_b1f162a1d03a0068d35a6b3b9959d48f.plist.html#reportHash=e147c29fb54fd1fadf3b34177d14d6eb">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'buf_2'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>46</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_as_read.c_clang-tidy_b1f162a1d03a0068d35a6b3b9959d48f.plist.html#reportHash=25e0c4154840f5eb810456f17d2cc55e">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>47</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c" line="12">
+                      <a href="getwd_dirty_malloc_first_use_as_read.c_clang-tidy_b1f162a1d03a0068d35a6b3b9959d48f.plist.html#reportHash=7124d8d58f8ebd24373409b320635e13">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_read.c @ Line&nbsp;12
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'test'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>48</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_as_write.c_clangsa_d0838d20c38c5f13dfb21caf94588c34.plist.html#reportHash=dfd490788d4141b0b53b5f7c1abd3991">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'buf_2' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>49</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c" line="12">
+                      <a href="getwd_dirty_malloc_first_use_as_write.c_clangsa_d0838d20c38c5f13dfb21caf94588c34.plist.html#reportHash=6945d6f2974c9839ea75a74ed2bee9e5">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c @ Line&nbsp;12
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable before checking the associated return value in 'buf_2' for errors</td>
+                    <td class="bug-path-length">4</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>50</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_as_write.c_clang-tidy_d0838d20c38c5f13dfb21caf94588c34.plist.html#reportHash=e8ea7bc2c32cdca97ba988571ade2df9">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'buf_2'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>51</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_as_write.c_clang-tidy_d0838d20c38c5f13dfb21caf94588c34.plist.html#reportHash=43bb2304e44567edd5fc443ba12153b9">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_as_write.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>52</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_in_func.c_clangsa_d430cc3de80f79d546edee25c27e1759.plist.html#reportHash=dfd490788d4141b0b53b5f7c1abd3991">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="low">
+                      <i class="severity-low"
+                         title="low"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/analyzer/checkers.html#deadcode-deadstores-c" target="_blank">deadcode.DeadStores</a></td>
+                    <td>Value stored to 'buf_2' during its initialization is never read</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>53</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c" line="12">
+                      <a href="getwd_dirty_malloc_first_use_in_func.c_clangsa_d430cc3de80f79d546edee25c27e1759.plist.html#reportHash=2626591c494321876179ec20ee4367bf">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c @ Line&nbsp;12
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable before checking the associated return value in 'buf_2' for errors</td>
+                    <td class="bug-path-length">4</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>54</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_in_func.c_clang-tidy_d430cc3de80f79d546edee25c27e1759.plist.html#reportHash=c41f6ccb3005c6daa5b24a50fc40415a">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-variable" target="_blank">clang-diagnostic-unused-variable</a></td>
+                    <td>unused variable 'buf_2'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>55</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c" line="9">
+                      <a href="getwd_dirty_malloc_first_use_in_func.c_clang-tidy_d430cc3de80f79d546edee25c27e1759.plist.html#reportHash=52a19fb0556346c9fc88624a6094374d">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/getwd_dirty_malloc_first_use_in_func.c @ Line&nbsp;9
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wdeprecated-declarations" target="_blank">clang-diagnostic-deprecated-declarations</a></td>
+                    <td>'getwd' is deprecated</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>56</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_clean_custom_allocator.c" line="15">
+                      <a href="malloc_clean_custom_allocator.c_clang-tidy_a84d01db3c5d5db2d804246b776bed66.plist.html#reportHash=a1a82de278ee188ab3c619066c46c213">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_clean_custom_allocator.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argc'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>57</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_clean_custom_allocator.c" line="15">
+                      <a href="malloc_clean_custom_allocator.c_clang-tidy_a84d01db3c5d5db2d804246b776bed66.plist.html#reportHash=a1f0673582187c0b345a56f4562c893d">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_clean_custom_allocator.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argv'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>58</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_dirty_custom_allocator.c" line="20">
+                      <a href="malloc_dirty_custom_allocator.c_clangsa_336a9be65640bf1d9cb21e95bc3b5c10.plist.html#reportHash=de00d8c742fa85198709fabb60a66979">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_dirty_custom_allocator.c @ Line&nbsp;20
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'mem' before checking it for errors</td>
+                    <td class="bug-path-length">6</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>59</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_dirty_custom_allocator.c" line="15">
+                      <a href="malloc_dirty_custom_allocator.c_clang-tidy_336a9be65640bf1d9cb21e95bc3b5c10.plist.html#reportHash=a7d73cd5eb79c83193afd481b17403f8">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_dirty_custom_allocator.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argc'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>60</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_dirty_custom_allocator.c" line="15">
+                      <a href="malloc_dirty_custom_allocator.c_clang-tidy_336a9be65640bf1d9cb21e95bc3b5c10.plist.html#reportHash=968171913c79bc8eac48f349087e48f5">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/malloc_dirty_custom_allocator.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argv'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>61</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_clean_array_first_use_in_func.c" line="25">
+                      <a href="open_clean_array_first_use_in_func.c_clangsa_e2f274875147e7a6ff2dadaf75db660f.plist.html#reportHash=1c7069e903cb5b5e30b882b4dc015ebd">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_clean_array_first_use_in_func.c @ Line&nbsp;25
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'r' is not checked for errors properly</td>
+                    <td class="bug-path-length">12</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>62</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_clean_malloc_array_first_use_in_func.c" line="27">
+                      <a href="open_clean_malloc_array_first_use_in_func.c_clangsa_e211681da58b0dc83668fc3ec5c86e99.plist.html#reportHash=1c7069e903cb5b5e30b882b4dc015ebd">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_clean_malloc_array_first_use_in_func.c @ Line&nbsp;27
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'r' is not checked for errors properly</td>
+                    <td class="bug-path-length">13</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>63</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_clean_malloc_first_use_in_func.c" line="21">
+                      <a href="open_clean_malloc_first_use_in_func.c_clangsa_7798078848a0d98324f5838d4a91e247.plist.html#reportHash=ae966a187f02ad7b7a3196d34caec131">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_clean_malloc_first_use_in_func.c @ Line&nbsp;21
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'r' is not checked for errors properly</td>
+                    <td class="bug-path-length">6</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>64</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c" line="22">
+                      <a href="open_dirty_array_first_use_in_func.c_clangsa_0bca38c955386e16f91ad4af21e22108.plist.html#reportHash=d272e0b12e8ef0a3902c9b6583d6f862">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c @ Line&nbsp;22
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'Element{files,0 S64b,int}' before checking it for errors</td>
+                    <td class="bug-path-length">12</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>65</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c" line="22">
+                      <a href="open_dirty_array_first_use_in_func.c_clangsa_0bca38c955386e16f91ad4af21e22108.plist.html#reportHash=d272e0b12e8ef0a3902c9b6583d6f862">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c @ Line&nbsp;22
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'Element{files,1 S64b,int}' before checking it for errors</td>
+                    <td class="bug-path-length">14</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>66</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c" line="22">
+                      <a href="open_dirty_array_first_use_in_func.c_clangsa_0bca38c955386e16f91ad4af21e22108.plist.html#reportHash=d272e0b12e8ef0a3902c9b6583d6f862">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c @ Line&nbsp;22
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'Element{files,2 S64b,int}' before checking it for errors</td>
+                    <td class="bug-path-length">16</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>67</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c" line="24">
+                      <a href="open_dirty_array_first_use_in_func.c_clangsa_0bca38c955386e16f91ad4af21e22108.plist.html#reportHash=1c7069e903cb5b5e30b882b4dc015ebd">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_array_first_use_in_func.c @ Line&nbsp;24
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'r' is not checked for errors properly</td>
+                    <td class="bug-path-length">11</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>68</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_first_use_in_func.c" line="15">
+                      <a href="open_dirty_first_use_in_func.c_clangsa_b639fc7e37bd42ea3f6f3ffcc40f8a40.plist.html#reportHash=c9265cbe1461f26ddad3fdc8b9a42b88">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_first_use_in_func.c @ Line&nbsp;15
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'fd' before checking it for errors</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>69</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c" line="24">
+                      <a href="open_dirty_malloc_array_first_use_in_func.c_clangsa_dca7232ea47ef0fbe438eb0586bb9c7f.plist.html#reportHash=d272e0b12e8ef0a3902c9b6583d6f862">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c @ Line&nbsp;24
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'Element{HeapSymRegion{conj_$1{void *, LC1, S39522, #1}},0 S64b,int}' before checking it for errors</td>
+                    <td class="bug-path-length">13</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>70</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c" line="24">
+                      <a href="open_dirty_malloc_array_first_use_in_func.c_clangsa_dca7232ea47ef0fbe438eb0586bb9c7f.plist.html#reportHash=d272e0b12e8ef0a3902c9b6583d6f862">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c @ Line&nbsp;24
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'Element{HeapSymRegion{conj_$1{void *, LC1, S39522, #1}},1 S64b,int}' before checking it for errors</td>
+                    <td class="bug-path-length">15</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>71</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c" line="24">
+                      <a href="open_dirty_malloc_array_first_use_in_func.c_clangsa_dca7232ea47ef0fbe438eb0586bb9c7f.plist.html#reportHash=d272e0b12e8ef0a3902c9b6583d6f862">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c @ Line&nbsp;24
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'Element{HeapSymRegion{conj_$1{void *, LC1, S39522, #1}},2 S64b,int}' before checking it for errors</td>
+                    <td class="bug-path-length">17</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>72</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c" line="26">
+                      <a href="open_dirty_malloc_array_first_use_in_func.c_clangsa_dca7232ea47ef0fbe438eb0586bb9c7f.plist.html#reportHash=1c7069e903cb5b5e30b882b4dc015ebd">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_array_first_use_in_func.c @ Line&nbsp;26
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'r' is not checked for errors properly</td>
+                    <td class="bug-path-length">12</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>73</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_first_use_in_func.c" line="18">
+                      <a href="open_dirty_malloc_first_use_in_func.c_clangsa_395dc400de295b60606c897302010780.plist.html#reportHash=c9265cbe1461f26ddad3fdc8b9a42b88">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_first_use_in_func.c @ Line&nbsp;18
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Using variable 'buffer' before checking it for errors</td>
+                    <td class="bug-path-length">4</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>74</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_first_use_in_func.c" line="20">
+                      <a href="open_dirty_malloc_first_use_in_func.c_clangsa_395dc400de295b60606c897302010780.plist.html#reportHash=ae966a187f02ad7b7a3196d34caec131">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/open_dirty_malloc_first_use_in_func.c @ Line&nbsp;20
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value in 'r' is not checked for errors properly</td>
+                    <td class="bug-path-length">5</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>75</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_return_lost_first_use_in_func.c" line="8">
+                      <a href="read_clean_return_lost_first_use_in_func.c_clang-tidy_daf5cd522e32d2574f7006d65fbdbac2.plist.html#reportHash=d3032dce76c97ba9788f9504425c05ea">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_return_lost_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argc'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>76</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_return_lost_first_use_in_func.c" line="8">
+                      <a href="read_clean_return_lost_first_use_in_func.c_clang-tidy_daf5cd522e32d2574f7006d65fbdbac2.plist.html#reportHash=acf9a1552258e90ab3ddae0e1f48999e">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_return_lost_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argv'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>77</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_while_loop_first_use_in_func.c" line="8">
+                      <a href="read_clean_while_loop_first_use_in_func.c_clang-tidy_00c236aa1d0f9b0e6d837a072e017e75.plist.html#reportHash=ea493ae4e117019f8f695a4a6c42e5a7">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_while_loop_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argc'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>78</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_while_loop_first_use_in_func.c" line="8">
+                      <a href="read_clean_while_loop_first_use_in_func.c_clang-tidy_00c236aa1d0f9b0e6d837a072e017e75.plist.html#reportHash=394a9c57d1a1daf8e596b1d7224c6621">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_clean_while_loop_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argv'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>79</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c" line="17">
+                      <a href="read_dirty_return_lost_first_use_in_func.c_clangsa_09fc475de91ae7034831692ee6973ce3.plist.html#reportHash=7e0fe92340e2af340eb0a1141265dc51">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c @ Line&nbsp;17
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>The value returned by this function is not stored or checked anywhere</td>
+                    <td class="bug-path-length">2</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>80</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c" line="19">
+                      <a href="read_dirty_return_lost_first_use_in_func.c_clangsa_09fc475de91ae7034831692ee6973ce3.plist.html#reportHash=0e7ad9cce9a296b2542552ffeb8a9242">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c @ Line&nbsp;19
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value is not properly checked for errors</td>
+                    <td class="bug-path-length">3</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>81</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c" line="8">
+                      <a href="read_dirty_return_lost_first_use_in_func.c_clang-tidy_09fc475de91ae7034831692ee6973ce3.plist.html#reportHash=af6f9593dd86e818487e89c809a46f10">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argc'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>82</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c" line="8">
+                      <a href="read_dirty_return_lost_first_use_in_func.c_clang-tidy_09fc475de91ae7034831692ee6973ce3.plist.html#reportHash=393eefc5727bb997c5ea5724b409cac0">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_return_lost_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argv'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>83</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_while_loop_first_use_in_func.c" line="19">
+                      <a href="read_dirty_while_loop_first_use_in_func.c_clangsa_ce5719729025c11e11d9d7b127cdfbd7.plist.html#reportHash=f7edce11f81495e46d189ddeb898498a">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_while_loop_first_use_in_func.c @ Line&nbsp;19
+                      </a>
+                    </td>
+                    <td class="severity" severity="unspecified">
+                      <i class="severity-unspecified"
+                         title="unspecified"></i>
+                    </td>
+                    <td>alpha.unix.GenericErrorCode</td>
+                    <td>Return value is not properly checked for errors</td>
+                    <td class="bug-path-length">5</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>84</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_while_loop_first_use_in_func.c" line="8">
+                      <a href="read_dirty_while_loop_first_use_in_func.c_clang-tidy_ce5719729025c11e11d9d7b127cdfbd7.plist.html#reportHash=cdaacfcb5d2176dba84a405e8cde31c1">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_while_loop_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argc'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>85</td>
+                    <td file="/home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_while_loop_first_use_in_func.c" line="8">
+                      <a href="read_dirty_while_loop_first_use_in_func.c_clang-tidy_ce5719729025c11e11d9d7b127cdfbd7.plist.html#reportHash=e4504e490977156170c281053284654c">
+                        /home/mschroetter/project/falk-ba/tests/evaluation_tests/read_dirty_while_loop_first_use_in_func.c @ Line&nbsp;8
+                      </a>
+                    </td>
+                    <td class="severity" severity="medium">
+                      <i class="severity-medium"
+                         title="medium"></i>
+                    </td>
+                    <td><a href="https://clang.llvm.org/docs/DiagnosticsReference.html#wunused-parameter" target="_blank">clang-diagnostic-unused-parameter</a></td>
+                    <td>unused parameter 'argv'</td>
+                    <td class="bug-path-length">1</td>
+                    <td class="review-status review-status-unreviewed">
+                      unreviewed
+                    </td>
+                  </tr>
+    </table>
+  </div>
+  </body>
+</html>
