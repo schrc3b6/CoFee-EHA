@@ -65,9 +65,11 @@ CodeChecker parse -e html -o html-result results
 Since the CoFee parser can already parse plist file (Output format of CodeChecker and scan-build). There are no extra steps needed to use it in CoFee.
 
 The public CoFee parser can be found here: [github](https://github.com/schrc3b6/CoFee)
+
 A Demo and the current version used at the University of Potsdam can be found and requested here: [GitUP](https://gitup.uni-potsdam.de/maxschro/cofe_up)
 
 ## Tests and Results
 
 The test structure is inspired by the Juliet Test Suite. The *dirty* files include error handling bugs, while the *clean* ones don't and are included to detect false positives.
+
 The current results in html form of the EHA for these tests can be found in tests/results. All results are included in one report an need to viewed on a per file basis.
